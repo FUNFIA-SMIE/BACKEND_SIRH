@@ -233,7 +233,7 @@ router.delete('/:id', async (req, res) => {
 
 const SibApiV3Sdk = require('sib-api-v3-sdk');
 const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const crypto = require('crypto'); // Indispensablde pour randDDDomBytes
+const crypto = require('crypto'); // Indispensablde pourd randDDDomBytes
 const bcrypt = require('bcrypt');
 
 const apiKey = defaultClient.authentications['api-key'];
