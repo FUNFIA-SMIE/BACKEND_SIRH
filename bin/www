@@ -1,0 +1,112 @@
+
+/*
+var app = require('../app');
+var debug = require('debug')('backend:server');
+var http = require('http');
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+
+var server = http.createServer(app);
+
+
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Serveur démarré sur le port ${port} et accessible sur le réseau`);
+});server.on('error', onError);
+server.on('listening', onListening);
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    return val;
+  }
+
+  if (port >= 0) {
+    return port;
+  }
+
+  return false;
+}
+
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
+*/
+
+// Remplace :
+// var app = require('../app');
+// Par :
+
+var { server } = require('../app');
+var debug = require('debug')('backend:server');
+var http = require('http');
+
+// ─── NORMALIZE PORT ──────────────────────────────────────────
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+  if (isNaN(port)) return val;
+  if (port >= 0) return port;
+  return false;
+}
+
+// ─── ON ERROR ────────────────────────────────────────────────
+function onError(error) {
+  if (error.syscall !== 'listen') throw error;
+  var bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port;
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+// ─── ON LISTENING ────────────────────────────────────────────
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+  console.log('🚀 Serveur démarré sur le ' + bind);
+}
+
+var port = normalizePort(process.env.PORT || '3000');
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
