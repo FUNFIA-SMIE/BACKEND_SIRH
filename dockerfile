@@ -17,7 +17,6 @@ COPY package*.json ./
 COPY . .
 
 # Copier les certificats SSL dans le conteneur
-COPY cert/ /app/cert/
 
 # Installer les dépendances
 RUN npm install
