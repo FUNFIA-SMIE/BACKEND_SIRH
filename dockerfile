@@ -22,7 +22,7 @@ COPY . .
 RUN npm install
 
 # Exposer le port HTTPS
-EXPOSE 3000
+EXPOSE 3335
 
 # Démarrer l'application
 CMD ["npm","start"]

@@ -106,7 +106,7 @@ function onListening() {
   console.log('🚀 Serveur démarré sur le ' + bind);
 }
 
-var port = normalizePort(process.env.PORT || '3000');
+var port = normalizePort(process.env.PORT || '3335');
 server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
