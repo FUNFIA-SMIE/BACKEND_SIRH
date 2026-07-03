@@ -241,7 +241,7 @@ const apiKey = defaultClient.authentications['api-key'];
 apiKey.apiKey = process.env.SENDINBLUE_API_KEY;
 
 
-// 2. Utilisation de l'API Transactionnelle (et non Campaign)
+// 2. Utilisation de l'API Transactionnelle (et non Campaign)f
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 router.post('/creation_compte_SIRH', async (req, res) => {
