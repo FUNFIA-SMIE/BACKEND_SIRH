@@ -640,6 +640,8 @@ router.get('/', async (req, res) => {
             c.nb_jours, 
             c.statut,
             c.motif,
+            c.demi_journee_debut, 
+            c.demi_journee_fin,
             c.commentaire_refus,
             c.created_at as date_demande,
             tc.libelle as type_conge,
