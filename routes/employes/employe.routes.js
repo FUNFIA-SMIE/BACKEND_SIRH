@@ -15,11 +15,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // 1. LISTER TOUS LES EMPLOYÉS (avec jointures Poste et Département)
-// GET /employes
 router.get('/', async (req, res) => {
     try {
         const sql = `
-            SELECT *,e.id AS employe_id,d.nom AS nom_departement,p.intitule AS intitule_poste, e.nom AS nom_employe, e.prenom AS prenom_employe
+            SELECT e.*, d.nom AS nom_departement, p.intitule AS intitule_poste, e.nom AS nom_employe, e.prenom AS prenom_employe
             FROM employe e
             LEFT JOIN departement d ON e.departement_id = d.id
             LEFT JOIN poste p ON e.poste_id = p.id
@@ -34,7 +33,6 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
 // 2. RÉCUPÉRER UN EMPLOYÉ PAR SON ID (UUID)
 // GET /employes/:id
 router.get('/:id', async (req, res) => {
@@ -296,6 +294,77 @@ router.post('/creation_compte_SIRH', async (req, res) => {
             message: "Utilisateur créé et e-mail envoyé.",
             data: {
                 mot_de_passe_provisoire: passwordProvisoire // Renvoi pour affichage dashboard
+            }
+        });
+
+    } catch (error) {
+        console.error("Erreur détaillée:", error);
+        res.status(500).json({ success: false, error: "Échec de l'opération technique." });
+    }
+});
+
+router.post('/reinitialisation_mot_de_passe', async (req, res) => {
+    const { employe_id } = req.body;
+
+    // Validation simple
+    if (!employe_id) {
+        return res.status(400).json({ success: false, error: "Données manquantes" });
+    }
+
+    try {
+        // 1. Vérifier que l'utilisateur existe et est actif
+        const userResult = await db.query(
+            `SELECT employe_id, identifiant, est_actif FROM public.utilisateurs WHERE employe_id = $1`,
+            [employe_id]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: "Utilisateur introuvable" });
+        }
+
+        if (!userResult.rows[0].est_actif) {
+            return res.status(403).json({ success: false, error: "Compte désactivé" });
+        }
+
+        // 2. Génération du nouveau mot de passe provisoire
+        const passwordProvisoire = crypto.randomBytes(3).toString('hex').toUpperCase();
+        const hashedPw = await bcrypt.hash(passwordProvisoire, 10);
+
+        // 3. Mise à jour en base
+        await db.query(`
+            UPDATE public.utilisateurs
+            SET mot_de_passe = $1,
+                updated_at = NOW()
+            WHERE employe_id = $2
+        `, [hashedPw, employe_id]);
+
+        // 4. Préparation du mail Brevo
+        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        sendSmtpEmail.subject = "Réinitialisation de votre mot de passe SIRH";
+        sendSmtpEmail.htmlContent = `
+            <html>
+                <body style="font-family: sans-serif;">
+                    <p>Votre mot de passe a été réinitialisé. Voici vos nouveaux accès :</p>
+                    <div style="background: #f3f4f6; padding: 15px; border-radius: 8px;">
+                        <p><b>Nouveau mot de passe provisoire :</b> <span style="color:blue; font-size:18px;">${passwordProvisoire}</span></p>
+                    </div>
+                    <p><i>Veuillez le modifier lors de votre prochaine connexion.</i></p>
+                    <p style="color:#888; font-size:12px;">Si vous n'êtes pas à l'origine de cette demande, contactez immédiatement le service RH.</p>
+                </body>
+            </html>`;
+
+        sendSmtpEmail.sender = { "name": "Service RH", "email": "informaticienfunfiasmie@gmail.com" };
+        sendSmtpEmail.to = [{ "email": email_pro, "name": prenom }];
+
+        // 5. Envoi effectif
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
+
+        // 6. Réponse envoyée au Frontend Angular
+        res.status(200).json({
+            success: true,
+            message: "Mot de passe réinitialisé et e-mail envoyé.",
+            data: {
+                mot_de_passe_provisoire: passwordProvisoire
             }
         });
 
