@@ -643,6 +643,7 @@ router.get('/', async (req, res) => {
             c.demi_journee_debut, 
             c.demi_journee_fin,
             c.commentaire_refus,
+            c.justificatif_url,
             c.created_at as date_demande,
             tc.libelle as type_conge,
             tc.code as code_type,
