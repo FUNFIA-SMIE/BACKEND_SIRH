@@ -620,7 +620,7 @@ router.post('/ajustement', async (req, res) => {
   // Le bloc finally avec client.release() a été supprimé car on utilise le pool 'db' global directement
 });
 
-
+/*
 router.get('/', async (req, res) => {
   try {
     // Note : On retire les paramètres inutilisés dans le SQL pour éviter l'erreur 
@@ -672,5 +672,77 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+*/
 
+
+router.get('/', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+
+    const sql = `
+        SELECT 
+            c.id,
+            e.id AS employe_id,
+            e.nom,
+            e.departement_id, 
+            e.prenom, 
+            e.matricule,
+            e.photo_url,
+            c.date_debut, 
+            c.date_fin, 
+            c.nb_jours, 
+            c.statut,
+            c.motif,
+            c.demi_journee_debut, 
+            c.demi_journee_fin,
+            c.commentaire_refus,
+            c.justificatif_url,
+            c.created_at as date_demande,
+            tc.libelle as type_conge,
+            tc.code as code_type,
+            c.created_at,
+            sc.solde_restant,
+            sc.solde_initial
+        FROM 
+            conge c
+        JOIN 
+            employe e ON c.employe_id = e.id
+        LEFT JOIN 
+            type_conge tc ON c.type_conge_id = tc.id
+        LEFT JOIN 
+            solde_conge sc ON (
+                sc.employe_id = c.employe_id 
+                AND sc.type_conge_id = c.type_conge_id 
+                AND sc.annee = EXTRACT(YEAR FROM c.date_debut)
+            )
+        ORDER BY 
+            c.created_at DESC
+        LIMIT $1 OFFSET $2;`;
+
+    const countSql = `SELECT COUNT(*) FROM conge;`;
+
+    const [result, countResult] = await Promise.all([
+      db.query(sql, [limit, offset]),
+      db.query(countSql)
+    ]);
+
+    const total = parseInt(countResult.rows[0].count);
+
+    res.json({
+      data: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: offset + result.rows.length < total
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 module.exports = router;
