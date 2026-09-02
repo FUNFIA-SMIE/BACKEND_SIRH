@@ -85,7 +85,7 @@ router.post('/', async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, 'en_attente_manager', $6, $7, $8, $9)
       RETURNING id;
     `, [employe_id, type_conge_id, date_debut, date_fin,
-        nb_jours, motif, demi_journee_debut, demi_journee_fin, justificatif]);
+      nb_jours, motif, demi_journee_debut, demi_journee_fin, justificatif]);
 
     const newCongeId = congeResult.rows[0].id;
 
@@ -123,23 +123,23 @@ router.post('/', async (req, res) => {
     // ─── Notifier chaque manager en temps réel ───────────────
     managersRes.rows.forEach(manager => {
       io.to(`employe_${manager.employe_id}`).emit('nouvelle_demande', {
-        conge_id:   newCongeId,
-        employe:    `${emp.prenom} ${emp.nom}`,
+        conge_id: newCongeId,
+        employe: `${emp.prenom} ${emp.nom}`,
         date_debut,
         date_fin,
         nb_jours,
-        message:    `📋 Nouvelle demande de congé de ${emp.prenom} ${emp.nom} (${nb_jours} jour${nb_jours > 1 ? 's' : ''})`,
+        message: `📋 Nouvelle demande de congé de ${emp.prenom} ${emp.nom} (${nb_jours} jour${nb_jours > 1 ? 's' : ''})`,
       });
     });
 
     // ─── Notifier aussi la room globale "managers" ───────────
     io.to('room_managers').emit('nouvelle_demande', {
-      conge_id:   newCongeId,
-      employe:    `${emp.prenom} ${emp.nom}`,
+      conge_id: newCongeId,
+      employe: `${emp.prenom} ${emp.nom}`,
       date_debut,
       date_fin,
       nb_jours,
-      message:    `📋 Nouvelle demande de ${emp.prenom} ${emp.nom}`,
+      message: `📋 Nouvelle demande de ${emp.prenom} ${emp.nom}`,
     });
 
     res.status(201).json({ success: true, congeId: newCongeId });
@@ -327,9 +327,9 @@ router.patch('/valider/:id', async (req, res) => {
     const emoji = statut === 'approuve' ? '✅' : '❌';
 
     io.to(`employe_${employe_id}`).emit('statut_conge', {
-      conge_id:  congeId,
+      conge_id: congeId,
       statut,
-      message:   `${emoji} Votre congé a été ${label}.`,
+      message: `${emoji} Votre congé a été ${label}.`,
       commentaire: statut === 'refuse' ? commentaire.trim() : null,
     });
     // ─────────────────────────────────────────────────────────
@@ -484,7 +484,6 @@ router.post('/ajustement', async (req, res) => {
 
   console.log('Requête reçue pour ajuster le solde:', req.body);
 
-  
   // ── Validation des champs obligatoires ──────────────────────────────────────
   const missing = [];
   if (!employe_id) missing.push('employe_id');
@@ -507,26 +506,89 @@ router.post('/ajustement', async (req, res) => {
     });
   }
 
+  // ── Nettoyage / normalisation des IDs ───────────────────────────────────────
+  // Un espace invisible copié-collé (ou un trailing newline côté frontend) suffit
+  // à faire échouer un match UUID exact sans qu'aucune erreur explicite n'apparaisse.
+  const cleanEmployeId = String(employe_id).trim();
+  const cleanTypeCongeId = String(type_conge_id).trim();
+
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(cleanEmployeId)) {
+    return res.status(400).json({
+      success: false,
+      message: `employe_id n'est pas un UUID valide : "${employe_id}"`,
+    });
+  }
+  if (!UUID_REGEX.test(cleanTypeCongeId)) {
+    return res.status(400).json({
+      success: false,
+      message: `type_conge_id n'est pas un UUID valide : "${type_conge_id}"`,
+    });
+  }
+
   try {
-    // Remplacement de client.query par db.query
     await db.query('BEGIN');
 
     // ── 1. Vérifier que l'employé existe ────────────────────────────────────
-    const { rowCount: empCount } = await db.query(
-      'SELECT id FROM employe WHERE id = $1',
-      [employe_id]
+    // On récupère la ligne SANS filtre sur un éventuel statut actif d'abord,
+    // pour pouvoir distinguer "n'existe pas du tout" de "existe mais inactif/supprimé".
+    const empRes = await db.query(
+      'SELECT * FROM employe WHERE id = $1',
+      [cleanEmployeId]
     );
-    if (!empCount) {
+
+    // IMPORTANT : ne pas se fier à empRes.rowCount, certains wrappers/drivers
+    // Neon (ex: @neondatabase/serverless) ne le renseignent pas de façon fiable.
+    // rows.length est toujours correct.
+    if (!empRes.rows.length) {
+      console.log('[DEBUG] Employé introuvable pour id=', cleanEmployeId);
+
+      // Debug supplémentaire : confirme sur quelle base/host tourne cette requête,
+      // utile si un jour la connexion pointe vers une branche/DB inattendue.
+      let dbDebug = null;
+      try {
+        const dbInfo = await db.query('SELECT current_database() AS db, inet_server_addr() AS host');
+        dbDebug = dbInfo.rows[0];
+      } catch (e) {
+        // ignore si non supporté (ex: certains pools serverless)
+      }
+
       await db.query('ROLLBACK');
-      return res.status(404).json({ success: false, message: 'Employé introuvable.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Employé introuvable.',
+        debug: process.env.NODE_ENV === 'development'
+          ? { employe_id_recherche: cleanEmployeId, database_info: dbDebug }
+          : undefined,
+      });
+    }
+
+    const employe = empRes.rows[0];
+
+    // Si la table employe a une colonne de statut (actif / is_active / deleted_at),
+    // on le signale explicitement au lieu de renvoyer un 404 générique trompeur.
+    if ('actif' in employe && employe.actif === false) {
+      await db.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        message: `L'employé ${cleanEmployeId} existe mais est marqué inactif.`,
+      });
+    }
+    if ('deleted_at' in employe && employe.deleted_at !== null) {
+      await db.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        message: `L'employé ${cleanEmployeId} existe mais a été supprimé (soft delete).`,
+      });
     }
 
     // ── 2. Vérifier que le type_conge existe et est actif ──────────────────
     const typeRes = await db.query(
       'SELECT id, libelle, deductible_solde FROM type_conge WHERE id = $1 AND actif = true',
-      [type_conge_id]
+      [cleanTypeCongeId]
     );
-    if (!typeRes.rowCount) {
+    if (!typeRes.rows.length) {
+      console.log('[DEBUG] Type de congé introuvable pour id=', cleanTypeCongeId, '- résultat brut:', typeRes.rows);
       await db.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Type de congé introuvable ou inactif.' });
     }
@@ -536,18 +598,17 @@ router.post('/ajustement', async (req, res) => {
       `SELECT * FROM solde_conge
        WHERE employe_id = $1 AND type_conge_id = $2 AND annee = $3
        FOR UPDATE`,
-      [employe_id, type_conge_id, annee]
+      [cleanEmployeId, cleanTypeCongeId, annee]
     );
 
     let solde;
-    if (!soldeRes.rowCount) {
-      // Création automatique si la ligne n'existe pas encore
+    if (!soldeRes.rows.length) {
       const insertSolde = await db.query(
         `INSERT INTO solde_conge
            (employe_id, type_conge_id, annee, solde_initial, solde_acquis, solde_pris, solde_en_attente, solde_restant)
          VALUES ($1, $2, $3, 0, 0, 0, 0, 0)
          RETURNING *`,
-        [employe_id, type_conge_id, annee]
+        [cleanEmployeId, cleanTypeCongeId, annee]
       );
       solde = insertSolde.rows[0];
     } else {
@@ -557,7 +618,6 @@ router.post('/ajustement', async (req, res) => {
     // ── 4. Calculer le nouveau solde restant ───────────────────────────────
     const nouveau_solde_restant = parseFloat(solde.solde_restant) + parseFloat(delta_jours);
 
-    // Empêcher un solde restant négatif
     if (nouveau_solde_restant < 0) {
       await db.query('ROLLBACK');
       return res.status(422).json({
@@ -585,13 +645,11 @@ router.post('/ajustement', async (req, res) => {
     const absJours = Math.abs(delta_jours);
     const updatedSolde = await db.query(updateSoldeQuery, [absJours, solde.id]);
 
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
 
     const traceMotif = `[AJUSTEMENT MANUEL] ${delta_jours > 0 ? 'Crédit' : 'Débit'} de ${absJours} j – ${motif}`
       + (auteur_id ? ` (auteur: ${auteur_id})` : '');
 
-    // Note : Si vos ID de table conge sont des entiers auto-incrémentés (SERIAL), 
-    // retirez "id," et "$1," ainsi que la génération d'UUID ci-dessous.
     const traceRes = await db.query(
       `INSERT INTO conge
          (employe_id, type_conge_id, date_debut, date_fin, nb_jours,
@@ -599,7 +657,7 @@ router.post('/ajustement', async (req, res) => {
        VALUES
          ($1, $2, $3, $3, $4, false, false, 'approuve', $5)
        RETURNING *`,
-      [employe_id, type_conge_id, today, absJours, traceMotif]
+      [cleanEmployeId, cleanTypeCongeId, today, absJours, traceMotif]
     );
 
     await db.query('COMMIT');
@@ -620,11 +678,7 @@ router.post('/ajustement', async (req, res) => {
       detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
-
-  
-  // Le bloc finally avec client.release() a été supprimé car on utilise le pool 'db' global directement
 });
-
 /*
 router.get('/', async (req, res) => {
   try {
