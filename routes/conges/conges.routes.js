@@ -482,6 +482,9 @@ router.delete('/types-conge/:id', async (req, res) => {
 router.post('/ajustement', async (req, res) => {
   const { employe_id, type_conge_id, annee, delta_jours, motif, auteur_id } = req.body;
 
+  console.log('Requête reçue pour ajuster le solde:', req.body);
+
+  /*
   // ── Validation des champs obligatoires ──────────────────────────────────────
   const missing = [];
   if (!employe_id) missing.push('employe_id');
@@ -617,6 +620,8 @@ router.post('/ajustement', async (req, res) => {
       detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
+
+  */
   // Le bloc finally avec client.release() a été supprimé car on utilise le pool 'db' global directement
 });
 
