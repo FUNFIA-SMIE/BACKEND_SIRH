@@ -480,11 +480,11 @@ router.delete('/types-conge/:id', async (req, res) => {
 });
 
 router.post('/ajustement', async (req, res) => {
-  // On tolère un champ "id" parasite dans le payload (non utilisé ici)
   const { employe_id, type_conge_id, annee, delta_jours, motif, auteur_id } = req.body;
 
   console.log('Requête reçue pour ajuster le solde:', req.body);
 
+  
   // ── Validation des champs obligatoires ──────────────────────────────────────
   const missing = [];
   if (!employe_id) missing.push('employe_id');
@@ -507,38 +507,24 @@ router.post('/ajustement', async (req, res) => {
     });
   }
 
-  // Nettoyage défensif de l'UUID (espaces, retours à la ligne parasites)
-  const employeIdClean = String(employe_id).trim();
-  const typeCongeIdClean = String(type_conge_id).trim();
-
   try {
+    // Remplacement de client.query par db.query
     await db.query('BEGIN');
 
     // ── 1. Vérifier que l'employé existe ────────────────────────────────────
     const { rowCount: empCount } = await db.query(
       'SELECT id FROM employe WHERE id = $1',
-      [employeIdClean]
+      [employe_id]
     );
-
     if (!empCount) {
       await db.query('ROLLBACK');
-      // Log détaillé côté serveur pour diagnostiquer rapidement en prod
-      console.error(
-        `[ajustement-solde] Employé introuvable. employe_id reçu = "${employeIdClean}" ` +
-        `(longueur: ${employeIdClean.length}). Vérifiez que le frontend envoie le bon id ` +
-        `et que la base de données du service correspond bien à celle attendue.`
-      );
-      return res.status(404).json({
-        success: false,
-        message: 'Employé introuvable.',
-        employe_id_recu: employeIdClean, // utile en dev pour comparer avec la BDD
-      });
+      return res.status(404).json({ success: false, message: 'Employé introuvable.' });
     }
 
     // ── 2. Vérifier que le type_conge existe et est actif ──────────────────
     const typeRes = await db.query(
       'SELECT id, libelle, deductible_solde FROM type_conge WHERE id = $1 AND actif = true',
-      [typeCongeIdClean]
+      [type_conge_id]
     );
     if (!typeRes.rowCount) {
       await db.query('ROLLBACK');
@@ -550,17 +536,18 @@ router.post('/ajustement', async (req, res) => {
       `SELECT * FROM solde_conge
        WHERE employe_id = $1 AND type_conge_id = $2 AND annee = $3
        FOR UPDATE`,
-      [employeIdClean, typeCongeIdClean, annee]
+      [employe_id, type_conge_id, annee]
     );
 
     let solde;
     if (!soldeRes.rowCount) {
+      // Création automatique si la ligne n'existe pas encore
       const insertSolde = await db.query(
         `INSERT INTO solde_conge
            (employe_id, type_conge_id, annee, solde_initial, solde_acquis, solde_pris, solde_en_attente, solde_restant)
          VALUES ($1, $2, $3, 0, 0, 0, 0, 0)
          RETURNING *`,
-        [employeIdClean, typeCongeIdClean, annee]
+        [employe_id, type_conge_id, annee]
       );
       solde = insertSolde.rows[0];
     } else {
@@ -570,6 +557,7 @@ router.post('/ajustement', async (req, res) => {
     // ── 4. Calculer le nouveau solde restant ───────────────────────────────
     const nouveau_solde_restant = parseFloat(solde.solde_restant) + parseFloat(delta_jours);
 
+    // Empêcher un solde restant négatif
     if (nouveau_solde_restant < 0) {
       await db.query('ROLLBACK');
       return res.status(422).json({
@@ -602,6 +590,8 @@ router.post('/ajustement', async (req, res) => {
     const traceMotif = `[AJUSTEMENT MANUEL] ${delta_jours > 0 ? 'Crédit' : 'Débit'} de ${absJours} j – ${motif}`
       + (auteur_id ? ` (auteur: ${auteur_id})` : '');
 
+    // Note : Si vos ID de table conge sont des entiers auto-incrémentés (SERIAL), 
+    // retirez "id," et "$1," ainsi que la génération d'UUID ci-dessous.
     const traceRes = await db.query(
       `INSERT INTO conge
          (employe_id, type_conge_id, date_debut, date_fin, nb_jours,
@@ -609,7 +599,7 @@ router.post('/ajustement', async (req, res) => {
        VALUES
          ($1, $2, $3, $3, $4, false, false, 'approuve', $5)
        RETURNING *`,
-      [employeIdClean, typeCongeIdClean, today, absJours, traceMotif]
+      [employe_id, type_conge_id, today, absJours, traceMotif]
     );
 
     await db.query('COMMIT');
@@ -626,10 +616,13 @@ router.post('/ajustement', async (req, res) => {
     console.error('[ajustement-solde] Erreur :', err);
     return res.status(500).json({
       success: false,
-      message: "Erreur serveur lors de l'ajustement du solde.",
+      message: 'Erreur serveur lors de l\'ajustement du solde.',
       detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
+
+  
+  // Le bloc finally avec client.release() a été supprimé car on utilise le pool 'db' global directement
 });
 
 /*
