@@ -1,20 +1,17 @@
 const { Pool } = require('pg');
-require('dotenv').config();
 
 const pool = new Pool({
   user: 'postgres',
-  host: 'bore.pub',
+  host: '159.223.110.159',
   database: 'SIRH',
-  password: 'DBfun*123', // pas de mot de passe en dur, même en fallback
-  port:  41234, // remplace par le port réel donné par bore
+  password: 'DBfun*123',
+  port: 11348,
+  ssl: { rejectUnauthorized: false }
 });
-
-
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
-
 /*
 const { neon } = require('@neondatabase/serverless');
 const { setGlobalDispatcher, Agent } = require('undici');
