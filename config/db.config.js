@@ -2,17 +2,18 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '100.123.141.6',
-  database: process.env.DB_NAME || 'SIRH',
-  password: process.env.DB_PASS || 'DBfun*123',
-  port: process.env.DB_PORT || 5432,
+  user: 'postgres',
+  host: 'bore.pub',
+  database: 'SIRH',
+  password: 'DBfun*123', // pas de mot de passe en dur, même en fallback
+  port:  41234, // remplace par le port réel donné par bore
 });
+
+
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
-
 
 /*
 const { neon } = require('@neondatabase/serverless');
