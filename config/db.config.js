@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const pool = new Pool({
   user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'https://192b-102-17-10-190.ngrok-free.app',
+  host: process.env.DB_HOST || '100.123.141.6',
   database: process.env.DB_NAME || 'SIRH',
   password: process.env.DB_PASS || 'DBfun*123',
   port: process.env.DB_PORT || 5432,
