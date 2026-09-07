@@ -1,9 +1,9 @@
-/*-const { Pool } = require('pg');
+const { Pool } = require('pg');
 require('dotenv').config();
 
 const pool = new Pool({
   user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '192.168.88.200',
+  host: process.env.DB_HOST || 'https://192b-102-17-10-190.ngrok-free.app',
   database: process.env.DB_NAME || 'SIRH',
   password: process.env.DB_PASS || 'DBfun*123',
   port: process.env.DB_PORT || 5432,
@@ -12,8 +12,9 @@ const pool = new Pool({
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
-*/
 
+
+/*
 const { neon } = require('@neondatabase/serverless');
 const { setGlobalDispatcher, Agent } = require('undici');
 require('dotenv').config();
@@ -32,3 +33,4 @@ async function query(text, params = []) {
 }
 
 module.exports = { query, sql };
+*/
