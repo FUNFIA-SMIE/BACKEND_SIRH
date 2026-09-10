@@ -5,7 +5,7 @@ const pool = new Pool({
   host: '159.223.110.159',
   database: 'SIRH',
   password: 'DBfun*123',
-  port: 60797,
+  port: 23486,
   ssl: { rejectUnauthorized: false }
 });
 
