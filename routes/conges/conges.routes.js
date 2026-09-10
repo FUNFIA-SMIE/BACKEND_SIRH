@@ -679,6 +679,7 @@ router.post('/ajustement', async (req, res) => {
     });
   }
 });
+
 /*
 router.get('/', async (req, res) => {
   try {
@@ -804,4 +805,57 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+router.get('/conges_filter', async (req, res) => {
+  try {
+    const { statut } = req.query;
+
+    if (!statut) {
+      return res.status(400).json({ error: 'Le paramètre "statut" est requis dans la requête.' });
+    }
+
+    const sql = `
+        SELECT 
+            c.id,
+            e.nom,
+            e.departement_id, 
+            e.prenom, 
+            e.matricule,
+            e.photo_url,
+            c.date_debut, 
+            c.date_fin, 
+            c.nb_jours, 
+            c.statut,
+            c.motif,
+            tc.libelle as type_conge,
+            tc.code as code_type,
+            c.created_at,
+            sc.solde_restant,
+            sc.solde_initial
+        FROM 
+            conge c
+        JOIN 
+            employe e ON c.employe_id = e.id
+        LEFT JOIN 
+            type_conge tc ON c.type_conge_id = tc.id
+        LEFT JOIN 
+            solde_conge sc ON (
+                sc.employe_id = c.employe_id 
+                AND sc.type_conge_id = c.type_conge_id 
+                AND sc.annee = EXTRACT(YEAR FROM c.date_debut)
+            )
+        WHERE 
+            c.statut = $1
+        ORDER BY 
+            c.created_at DESC;`;
+
+    // Passage de la valeur du paramètre dans le tableau
+    const result = await db.query(sql, [statut]); 
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
