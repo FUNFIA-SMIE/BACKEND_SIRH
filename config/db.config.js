@@ -1,4 +1,4 @@
-const { Pool } = require('pg');
+/*const { Pool } = require('pg');
 
 const pool = new Pool({
   user: 'postgres',
@@ -12,6 +12,28 @@ const pool = new Pool({
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
+*/
+
+
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  user: 'postgres',
+  host: '192.168.88.200',
+  database: 'SIRH',
+  password: 'DBfun*123',
+  port: 5432,
+  ssl: { rejectUnauthorized: false }
+});
+
+module.exports = {
+  query: (text, params) => pool.query(text, params),
+};
+
+
+
+
+
 /*
 const { neon } = require('@neondatabase/serverless');
 const { setGlobalDispatcher, Agent } = require('undici');
