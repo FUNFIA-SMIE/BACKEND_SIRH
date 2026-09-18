@@ -1,11 +1,12 @@
 const { Pool } = require('pg');
 
+
 const pool = new Pool({
   user: 'postgres',
   host: '159.223.110.159',
   database: 'SIRH',
   password: 'DBfun*123',
-  port: 23486,
+  port: 34325,
   ssl: { rejectUnauthorized: false }
 });
 
@@ -29,9 +30,9 @@ const pool = new Pool({
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
+
+
 */
-
-
 
 
 /*

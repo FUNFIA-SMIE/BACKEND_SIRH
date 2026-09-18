@@ -73,23 +73,25 @@ router.post('/', async (req, res) => {
     }
 });
 
-// MODIFIER (PATCH)
 router.patch('/:id', async (req, res) => {
     const { id } = req.params;
     let fields = { ...req.body };
 
-    // Champs autorisés pour la mise à jour
+    console.log('Champs reçus pour la mise à jour :', fields);
+
+    
     const allowedFields = ['organisation_id', 'parent_id', 'code', 'nom', 'description', 'responsable_id', 'budget_annuel', 'effectif_max'];
 
-    // Conserver uniquement les champs autorisés
     fields = Object.fromEntries(
         Object.entries(fields).filter(([key]) => allowedFields.includes(key))
     );
 
-    // Convertir les chaînes vides en null pour les UUIDs
-    if (fields.organisation_id === '') fields.organisation_id = null;
-    if (fields.parent_id === '') fields.parent_id = null;
-    if (fields.responsable_id === '') fields.responsable_id = null;
+    const uuidFields = ['organisation_id', 'parent_id', 'responsable_id'];
+    uuidFields.forEach((key) => {
+        if (fields[key] === '' || fields[key] === 'undefined' || fields[key] === 'null' || fields[key] === undefined) {
+            fields[key] = null;
+        }
+    });
 
     const keys = Object.keys(fields);
     if (keys.length === 0) return res.status(400).json({ error: "Aucun champ à modifier ou champs invalides fournis" });
@@ -101,6 +103,9 @@ router.patch('/:id', async (req, res) => {
     try {
         const sql = `UPDATE departement SET ${setClause}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`;
         const result = await db.query(sql, values);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Département non trouvé" });
+        }
         res.json(result.rows[0]);
     } catch (err) {
         console.log('Erreur lors de la mise à jour :', err);
