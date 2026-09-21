@@ -6,7 +6,7 @@ const pool = new Pool({
   host: '159.223.110.159',
   database: 'SIRH',
   password: 'DBfun*123',
-  port: 34325,
+  port: 2194,
   ssl: { rejectUnauthorized: false }
 });
 
@@ -26,13 +26,11 @@ const pool = new Pool({
   port: 5432,
   ssl: { rejectUnauthorized: false }
 });
-
+*/
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
 
-
-*/
 
 
 /*
