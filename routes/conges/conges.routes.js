@@ -858,4 +858,51 @@ router.get('/conges_filter', async (req, res) => {
   }
 });
 
+router.get('/employe_solde/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const sql = `
+      SELECT
+        e.id         AS employe_id,
+        e.matricule,
+        e.nom,
+        e.prenom,
+        e.email_pro,
+        e.statut     AS statut_employe,
+        e.photo_url,
+        COALESCE(s.soldes, '[]'::json) AS soldes
+      FROM employe e
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'type_conge_id',    tc.id,
+            'libelle',          tc.libelle,
+            'solde_initial',    sc.solde_initial,
+            'solde_acquis',     sc.solde_acquis,
+            'solde_pris',       sc.solde_pris,
+            'solde_en_attente', sc.solde_en_attente,
+            'solde_restant',    sc.solde_restant
+          ) ORDER BY tc.libelle
+        ) AS soldes
+        FROM solde_conge sc
+        JOIN type_conge tc ON tc.id = sc.type_conge_id
+        WHERE sc.employe_id = e.id
+      ) s ON true
+      WHERE e.id = $1
+    `;
+
+    const result = await db.query(sql, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Employé introuvable' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Erreur employe_solde/:id :', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
