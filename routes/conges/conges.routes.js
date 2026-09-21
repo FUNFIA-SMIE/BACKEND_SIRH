@@ -905,4 +905,68 @@ router.get('/employe_solde/:id', async (req, res) => {
   }
 });
 
+// GET /conges/employe/:employe_id  (optionnel : ?statut=approuve)
+router.get('/employe/:employe_id', async (req, res) => {
+  try {
+    const { employe_id } = req.params;
+    const { statut } = req.query;
+
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(employe_id)) {
+      return res.status(400).json({ error: 'employe_id invalide' });
+    }
+
+    const params = [employe_id];
+    let filtreStatut = '';
+    if (statut) {
+      params.push(statut);
+      filtreStatut = `AND c.statut = $2`;
+    }
+
+    const sql = `
+      SELECT
+        c.id,
+        e.id AS employe_id,
+        e.nom,
+        e.prenom,
+        e.matricule,
+        e.photo_url,
+        e.departement_id,
+        p.intitule AS poste,
+        c.date_debut,
+        c.date_fin,
+        c.nb_jours,
+        c.statut,
+        c.motif,
+        c.demi_journee_debut,
+        c.demi_journee_fin,
+        c.commentaire_refus,
+        c.justificatif_url,
+        c.created_at AS date_demande,
+        c.created_at,
+        tc.libelle AS type_conge,
+        tc.code    AS code_type,
+        sc.solde_restant,
+        sc.solde_initial
+      FROM conge c
+      JOIN employe e ON c.employe_id = e.id
+      LEFT JOIN poste p ON e.poste_id = p.id
+      LEFT JOIN type_conge tc ON c.type_conge_id = tc.id
+      LEFT JOIN solde_conge sc
+             ON sc.employe_id = c.employe_id
+            AND sc.type_conge_id = c.type_conge_id
+            AND sc.annee = EXTRACT(YEAR FROM c.date_debut)
+      WHERE c.employe_id = $1
+      ${filtreStatut}
+      ORDER BY c.created_at DESC;
+    `;
+
+    const result = await db.query(sql, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erreur conges/employe/:employe_id :', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
