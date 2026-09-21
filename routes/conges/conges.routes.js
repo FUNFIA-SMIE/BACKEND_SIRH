@@ -957,7 +957,8 @@ router.get('/employe/:employe_id', async (req, res) => {
             AND sc.type_conge_id = c.type_conge_id
             AND sc.annee = EXTRACT(YEAR FROM c.date_debut)
       WHERE c.employe_id = $1
-      ${filtreStatut}
+        AND COALESCE(c.motif, '') NOT LIKE '[AJUSTEMENT MANUEL]%'
+        ${filtreStatut}
       ORDER BY c.created_at DESC;
     `;
 
@@ -965,6 +966,110 @@ router.get('/employe/:employe_id', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Erreur conges/employe/:employe_id :', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/filtre', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { search, statut, type, employe_id, departement_id, date_debut, date_fin } = req.query;
+
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const STATUTS = ['brouillon', 'en_attente_manager', 'en_attente_rh', 'approuve', 'refuse', 'annule'];
+
+    if (employe_id && !UUID_REGEX.test(employe_id)) {
+      return res.status(400).json({ error: 'employe_id invalide' });
+    }
+    if (departement_id && !UUID_REGEX.test(departement_id)) {
+      return res.status(400).json({ error: 'departement_id invalide' });
+    }
+    if (statut && statut.trim() && !STATUTS.includes(statut.trim())) {
+      return res.status(400).json({ error: `statut invalide : ${statut}` });
+    }
+
+    const conditions = [];
+    const params = [];
+    const add = (v) => { params.push(v); return `$${params.length}`; };
+
+    if (search && search.trim()) {
+      const p = add(`%${search.trim()}%`);
+      conditions.push(`(
+        e.nom ILIKE ${p}
+        OR e.prenom ILIKE ${p}
+        OR CONCAT_WS(' ', e.nom, e.prenom) ILIKE ${p}
+        OR CONCAT_WS(' ', e.prenom, e.nom) ILIKE ${p}
+        OR e.matricule::text ILIKE ${p}
+        OR tc.libelle ILIKE ${p}
+      )`);
+    }
+    if (statut && statut.trim()) conditions.push(`c.statut = ${add(statut.trim())}`);
+    if (type && type.trim()) conditions.push(`tc.libelle = ${add(type.trim())}`);
+    if (employe_id) conditions.push(`c.employe_id = ${add(employe_id)}`);
+    if (departement_id) conditions.push(`e.departement_id = ${add(departement_id)}`);
+    if (date_debut) conditions.push(`c.date_fin >= ${add(date_debut)}`);
+    if (date_fin) conditions.push(`c.date_debut <= ${add(date_fin)}`);
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const sql = `
+      SELECT 
+        c.id,
+        e.id AS employe_id,
+        e.nom,
+        e.departement_id,
+        e.prenom,
+        e.matricule,
+        c.date_debut,
+        c.date_fin,
+        c.nb_jours,
+        c.statut,
+        c.motif,
+        c.demi_journee_debut,
+        c.demi_journee_fin,
+        c.commentaire_refus,
+        c.justificatif_url,
+        c.created_at AS date_demande,
+        tc.libelle AS type_conge,
+        tc.code AS code_type,
+        c.created_at,
+        sc.solde_restant,
+        sc.solde_initial
+      FROM conge c
+      JOIN employe e ON c.employe_id = e.id
+      LEFT JOIN type_conge tc ON c.type_conge_id = tc.id
+      LEFT JOIN LATERAL (
+        SELECT s.solde_restant, s.solde_initial
+        FROM solde_conge s
+        WHERE s.employe_id = c.employe_id
+          AND s.type_conge_id = c.type_conge_id
+          AND s.annee = EXTRACT(YEAR FROM c.date_debut)::int
+        LIMIT 1
+      ) sc ON true
+      ${where}
+      ORDER BY c.created_at DESC;`;
+
+    const result = await db.query(sql, params);
+    console.log(`[/conges/filtre] ${result.rows.length} lignes en ${Date.now() - t0} ms`, req.query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erreur /conges/filtre', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/stats', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE statut IN ('en_attente_manager', 'en_attente_rh')) AS en_attente,
+        COUNT(*) FILTER (WHERE statut = 'approuve') AS approuves,
+        COUNT(*) FILTER (WHERE statut = 'refuse') AS refuses,
+        COALESCE(SUM(nb_jours), 0) AS total_jours
+      FROM conge;`);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Erreur /conges/stats', error);
     res.status(500).json({ error: error.message });
   }
 });
