@@ -303,77 +303,96 @@ router.post('/creation_compte_SIRH', async (req, res) => {
     }
 });
 
-router.post('/reinitialisation_mot_de_passe', async (req, res) => {
+router.post(
+  '/reinitialisation_mot_de_passe',
+  verifierToken,
+  verifierRole(['admin', 'rh']),   // à adapter à ton système de rôles
+  async (req, res) => {
     const { employe_id } = req.body;
 
-    // Validation simple
     if (!employe_id) {
-        return res.status(400).json({ success: false, error: "Données manquantes" });
+      return res.status(400).json({ success: false, error: 'Données manquantes' });
     }
+
+    const client = await db.connect(); // db doit être un Pool
 
     try {
-        // 1. Vérifier que l'utilisateur existe et est actif
-        const userResult = await db.query(
-            `SELECT employe_id, identifiant, est_actif FROM public.utilisateurs WHERE employe_id = $1`,
-            [employe_id]
-        );
+      // 1. Récupérer l'utilisateur ET les infos de l'employé
+      const userResult = await client.query(
+        `SELECT u.employe_id, u.est_actif, e.email_pro, e.prenom
+         FROM public.utilisateurs u
+         JOIN public.employes e ON e.id = u.employe_id
+         WHERE u.employe_id = $1`,
+        [employe_id]
+      );
 
-        if (userResult.rows.length === 0) {
-            return res.status(404).json({ success: false, error: "Utilisateur introuvable" });
-        }
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Utilisateur introuvable' });
+      }
 
-        if (!userResult.rows[0].est_actif) {
-            return res.status(403).json({ success: false, error: "Compte désactivé" });
-        }
+      const { est_actif, email_pro, prenom } = userResult.rows[0];
 
-        // 2. Génération du nouveau mot de passe provisoire
-        const passwordProvisoire = crypto.randomBytes(3).toString('hex').toUpperCase();
-        const hashedPw = await bcrypt.hash(passwordProvisoire, 10);
+      if (!est_actif) {
+        return res.status(403).json({ success: false, error: 'Compte désactivé' });
+      }
+      if (!email_pro) {
+        return res.status(422).json({ success: false, error: "Aucun email professionnel renseigné" });
+      }
 
-        // 3. Mise à jour en base
-        await db.query(`
-            UPDATE public.utilisateurs
-            SET mot_de_passe = $1,
-                updated_at = NOW()
-            WHERE employe_id = $2
-        `, [hashedPw, employe_id]);
+      // 2. Mot de passe provisoire plus robuste (12 caractères)
+      const passwordProvisoire = crypto.randomBytes(9).toString('base64url');
+      const hashedPw = await bcrypt.hash(passwordProvisoire, 10);
 
-        // 4. Préparation du mail Brevo
-        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-        sendSmtpEmail.subject = "Réinitialisation de votre mot de passe SIRH";
-        sendSmtpEmail.htmlContent = `
-            <html>
-                <body style="font-family: sans-serif;">
-                    <p>Votre mot de passe a été réinitialisé. Voici vos nouveaux accès :</p>
-                    <div style="background: #f3f4f6; padding: 15px; border-radius: 8px;">
-                        <p><b>Nouveau mot de passe provisoire :</b> <span style="color:blue; font-size:18px;">${passwordProvisoire}</span></p>
-                    </div>
-                    <p><i>Veuillez le modifier lors de votre prochaine connexion.</i></p>
-                    <p style="color:#888; font-size:12px;">Si vous n'êtes pas à l'origine de cette demande, contactez immédiatement le service RH.</p>
-                </body>
-            </html>`;
+      // 3. Transaction : on ne valide que si l'email part
+      await client.query('BEGIN');
 
-        sendSmtpEmail.sender = { "name": "Service RH", "email": "informaticienfunfiasmie@gmail.com" };
-        sendSmtpEmail.to = [{ "email": email_pro, "name": prenom }];
+      await client.query(
+        `UPDATE public.utilisateurs
+         SET mot_de_passe = $1, doit_changer_mdp = true, updated_at = NOW()
+         WHERE employe_id = $2`,
+        [hashedPw, employe_id]
+      );
 
-        // 5. Envoi effectif
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
+      const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+      sendSmtpEmail.subject = 'Réinitialisation de votre mot de passe SIRH';
+      sendSmtpEmail.htmlContent = `
+        <html><body style="font-family: sans-serif;">
+          <p>Bonjour ${escapeHtml(prenom)},</p>
+          <p>Votre mot de passe a été réinitialisé.</p>
+          <div style="background:#f3f4f6;padding:15px;border-radius:8px;">
+            <b>Mot de passe provisoire :</b>
+            <span style="font-size:18px;">${passwordProvisoire}</span>
+          </div>
+          <p><i>Vous devrez le modifier dès votre prochaine connexion.</i></p>
+          <p style="color:#888;font-size:12px;">Si vous n'êtes pas à l'origine de cette demande, contactez immédiatement le service RH.</p>
+        </body></html>`;
+      sendSmtpEmail.sender = { name: 'Service RH', email: process.env.MAIL_SENDER };
+      sendSmtpEmail.to = [{ email: email_pro, name: prenom }];
 
-        // 6. Réponse envoyée au Frontend Angular
-        res.status(200).json({
-            success: true,
-            message: "Mot de passe réinitialisé et e-mail envoyé.",
-            data: {
-                mot_de_passe_provisoire: passwordProvisoire
-            }
-        });
+      await apiInstance.sendTransacEmail(sendSmtpEmail);
 
+      await client.query('COMMIT');
+
+      // 4. Plus de mot de passe dans la réponse
+      return res.status(200).json({
+        success: true,
+        message: 'Mot de passe réinitialisé et e-mail envoyé.',
+      });
     } catch (error) {
-        console.error("Erreur détaillée:", error);
-        res.status(500).json({ success: false, error: "Échec de l'opération technique." });
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('Erreur réinitialisation mot de passe :', error);
+      return res.status(500).json({ success: false, error: "Échec de l'opération technique." });
+    } finally {
+      client.release();
     }
-});
+  }
+);
 
+function escapeHtml(s = '') {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 // GET /employes/:id
 router.get('/employes_utilisateurs/:id', async (req, res) => {
