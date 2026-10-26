@@ -306,15 +306,18 @@ router.post('/creation_compte_SIRH', async (req, res) => {
 router.post('/reinitialisation_mot_de_passe', async (req, res) => {
     const { employe_id } = req.body;
 
-    // Validation simple
     if (!employe_id) {
         return res.status(400).json({ success: false, error: "Données manquantes" });
     }
 
     try {
-        // 1. Vérifier que l'utilisateur existe et est actif
+        // 1. Vérifier l'utilisateur et récupérer email_pro + prenom
         const userResult = await db.query(
-            `SELECT employe_id, identifiant, est_actif FROM public.utilisateurs WHERE employe_id = $1`,
+            `SELECT u.employe_id, u.identifiant, u.est_actif,
+                    e.email_pro, e.prenom
+             FROM public.utilisateurs u
+             JOIN public.employe e ON e.id = u.employe_id
+             WHERE u.employe_id = $1`,
             [employe_id]
         );
 
@@ -322,50 +325,49 @@ router.post('/reinitialisation_mot_de_passe', async (req, res) => {
             return res.status(404).json({ success: false, error: "Utilisateur introuvable" });
         }
 
-        if (!userResult.rows[0].est_actif) {
+        const { est_actif, email_pro, prenom } = userResult.rows[0];
+
+        if (!est_actif) {
             return res.status(403).json({ success: false, error: "Compte désactivé" });
         }
 
-        // 2. Génération du nouveau mot de passe provisoire
+        // 2. Mot de passe provisoire
         const passwordProvisoire = crypto.randomBytes(3).toString('hex').toUpperCase();
         const hashedPw = await bcrypt.hash(passwordProvisoire, 10);
 
-        // 3. Mise à jour en base
-        await db.query(`
-            UPDATE public.utilisateurs
-            SET mot_de_passe = $1,
-                updated_at = NOW()
-            WHERE employe_id = $2
-        `, [hashedPw, employe_id]);
-
-        // 4. Préparation du mail Brevo
+        // 3. Préparation du mail Brevo
         const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
         sendSmtpEmail.subject = "Réinitialisation de votre mot de passe SIRH";
         sendSmtpEmail.htmlContent = `
             <html>
                 <body style="font-family: sans-serif;">
-                    <p>Votre mot de passe a été réinitialisé. Voici vos nouveaux accès :</p>
+                    <p>Bonjour ${prenom}, votre mot de passe a été réinitialisé. Voici vos nouveaux accès :</p>
                     <div style="background: #f3f4f6; padding: 15px; border-radius: 8px;">
+                        <p><b>Identifiant :</b> ${userResult.rows[0].identifiant}</p>
                         <p><b>Nouveau mot de passe provisoire :</b> <span style="color:blue; font-size:18px;">${passwordProvisoire}</span></p>
                     </div>
                     <p><i>Veuillez le modifier lors de votre prochaine connexion.</i></p>
                     <p style="color:#888; font-size:12px;">Si vous n'êtes pas à l'origine de cette demande, contactez immédiatement le service RH.</p>
                 </body>
             </html>`;
+        sendSmtpEmail.sender = { name: "Service RH", email: "informaticienfunfiasmie@gmail.com" };
+        sendSmtpEmail.to = [{ email: email_pro, name: prenom }];
 
-        sendSmtpEmail.sender = { "name": "Service RH", "email": "informaticienfunfiasmie@gmail.com" };
-        sendSmtpEmail.to = [{ "email": email_pro, "name": prenom }];
-
-        // 5. Envoi effectif
+        // 4. Envoi du mail AVANT la mise à jour en base
         await apiInstance.sendTransacEmail(sendSmtpEmail);
 
-        // 6. Réponse envoyée au Frontend Angular
+        // 5. Mise à jour en base (seulement si le mail est parti)
+        await db.query(
+            `UPDATE public.utilisateurs
+             SET mot_de_passe = $1, updated_at = NOW()
+             WHERE employe_id = $2`,
+            [hashedPw, employe_id]
+        );
+
+        // 6. Réponse (sans le mot de passe)
         res.status(200).json({
             success: true,
-            message: "Mot de passe réinitialisé et e-mail envoyé.",
-            data: {
-                mot_de_passe_provisoire: passwordProvisoire
-            }
+            message: "Mot de passe réinitialisé et e-mail envoyé."
         });
 
     } catch (error) {
@@ -373,7 +375,6 @@ router.post('/reinitialisation_mot_de_passe', async (req, res) => {
         res.status(500).json({ success: false, error: "Échec de l'opération technique." });
     }
 });
-
 
 // GET /employes/:id
 router.get('/employes_utilisateurs/:id', async (req, res) => {
