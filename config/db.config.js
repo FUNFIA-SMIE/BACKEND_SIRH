@@ -1,7 +1,7 @@
 
 const { Pool } = require('pg');
 
-
+/*
 const pool = new Pool({
   user: 'postgres',
   host: '159.223.110.159',
@@ -10,13 +10,13 @@ const pool = new Pool({
   port: 2194,
   ssl: { rejectUnauthorized: false }
 });
-
+*/
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
 
 
-/*
+
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -27,7 +27,7 @@ const pool = new Pool({
   port: 5432,
   ssl: { rejectUnauthorized: false }
 });
-*/
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
