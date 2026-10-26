@@ -50,7 +50,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // 3. CRÉER UN NOUVEL EMPLOYÉ
-// POST /employes
+// POST /employe
 router.post('/', async (req, res) => {
     let {
         organisation_id, matricule, civilite, nom, prenom,
