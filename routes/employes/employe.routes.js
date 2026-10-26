@@ -365,11 +365,11 @@ router.post('/reinitialisation_mot_de_passe', async (req, res) => {
         );
 
         // 6. Réponse (sans le mot de passe)
-        res.status(200).json({
-            success: true,
-            message: "Mot de passe réinitialisé et e-mail envoyé."
-        });
-
+res.status(200).json({
+    success: true,
+    message: "Mot de passe réinitialisé et e-mail envoyé.",
+    data: { mot_de_passe_provisoire: passwordProvisoire }
+});
     } catch (error) {
         console.error("Erreur détaillée:", error);
         res.status(500).json({ success: false, error: "Échec de l'opération technique." });
