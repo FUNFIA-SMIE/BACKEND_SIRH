@@ -10,11 +10,11 @@ const pool = new Pool({
   port: 2194,
   ssl: { rejectUnauthorized: false }
 });
-*/
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };
-
+*/
 
 
 const { Pool } = require('pg');
